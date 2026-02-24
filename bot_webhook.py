@@ -10,9 +10,9 @@ BOT_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL')
 PORT = int(os.environ.get('PORT', 10000))
 
-# Ваши ссылки на документы (ЗАМЕНИТЕ НА РАБОЧИЕ!)
+# Ваши ссылки на документы
 PEDAGOGICAL_LINK = "https://docs.google.com/spreadsheets/d/1v4xlteVMrNZJ4vp2x3T_FxEFwC_4yUX2/edit?gid=1331177780#gid=1331177780"
-EDUCATIONAL_LINK = "https://disk.360.yandex.net/your-working-link"  # ВСТАВЬТЕ ПУБЛИЧНУЮ ССЫЛКУ
+EDUCATIONAL_LINK = "https://disk.360.yandex.net/your-working-link"  # ЗАМЕНИТЕ!
 
 # Настройка логирования
 logging.basicConfig(
@@ -61,13 +61,10 @@ async def init_bot():
     """Создание и инициализация приложения бота"""
     global bot_application
     
-    # Создаем приложение без Updater (для webhook)
-    bot_application = (
-        Application.builder()
-        .token(BOT_TOKEN)
-        .updater(None)  # Явно отключаем Updater для webhook режима
-        .build()
-    )
+    logger.info("🚀 Инициализация бота...")
+    
+    # Создаем приложение
+    bot_application = Application.builder().token(BOT_TOKEN).build()
     
     # Добавляем обработчики
     bot_application.add_handler(CommandHandler("start", start))
@@ -83,6 +80,7 @@ async def init_bot():
         await bot_application.bot.set_webhook(url=webhook_url)
         logger.info(f"✅ Webhook установлен на {webhook_url}")
     
+    logger.info("✅ Бот инициализирован")
     return bot_application
 # ------------------------------------------
 
@@ -90,22 +88,31 @@ async def init_bot():
 @flask_app.route('/webhook', methods=['POST'])
 def webhook():
     """Точка входа для сообщений от Telegram"""
+    global bot_application
+    
+    # Проверяем, что бот инициализирован
+    if bot_application is None:
+        logger.error("❌ Бот не инициализирован!")
+        return 'Bot not initialized', 503
+    
     try:
         update_data = request.get_json(force=True)
-        logger.info(f"Получено обновление: {update_data.get('update_id')}")
+        logger.info(f"📨 Получено обновление: {update_data.get('update_id')}")
         
         update = Update.de_json(update_data, bot_application.bot)
         
-        # Обрабатываем обновление
+        # Создаем новый event loop для каждого запроса
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        loop.run_until_complete(bot_application.process_update(update))
-        loop.close()
+        try:
+            loop.run_until_complete(bot_application.process_update(update))
+        finally:
+            loop.close()
         
         return 'OK', 200
     except Exception as e:
-        logger.error(f"Ошибка при обработке webhook: {e}")
-        return 'Error', 500
+        logger.error(f"❌ Ошибка при обработке webhook: {e}")
+        return f'Error: {str(e)}', 500
 
 @flask_app.route('/health')
 def health():
@@ -113,15 +120,30 @@ def health():
 
 @flask_app.route('/')
 def index():
-    return 'Бот для педагогических документов работает!'
+    status = "✅ Бот работает" if bot_application else "❌ Бот инициализируется"
+    return f'Бот для педагогических документов. Статус: {status}'
+
+@flask_app.route('/debug')
+def debug():
+    """Отладочная информация"""
+    return {
+        'bot_initialized': bot_application is not None,
+        'render_url': RENDER_EXTERNAL_URL,
+        'port': PORT
+    }
 # ------------------------------
 
 # ---------- ТОЧКА ВХОДА ----------
 if __name__ == '__main__':
-    # Инициализируем бота в отдельном цикле событий
+    # Инициализируем бота синхронно
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    loop.run_until_complete(init_bot())
+    try:
+        loop.run_until_complete(init_bot())
+    except Exception as e:
+        logger.error(f"❌ Ошибка при инициализации бота: {e}")
+    finally:
+        loop.close()
     
     # Запускаем Flask
     flask_app.run(host='0.0.0.0', port=PORT)
