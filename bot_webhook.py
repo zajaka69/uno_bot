@@ -5,16 +5,14 @@ from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-
 # ---------- НАСТРОЙКИ ----------
 BOT_TOKEN = os.environ.get('TELEGRAM_TOKEN')
-# Render сам подставит URL вашего сервиса
 RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL')
 PORT = int(os.environ.get('PORT', 10000))
 
-# Ваши ссылки на документы (ЗАМЕНИТЕ НА СВОИ)
+# Ваши ссылки на документы
 PEDAGOGICAL_LINK = "https://docs.google.com/spreadsheets/d/1v4xlteVMrNZJ4vp2x3T_FxEFwC_4yUX2/edit?gid=1331177780#gid=1331177780"
-EDUCATIONAL_LINK = "https://disk.360.yandex.ru/edit/d/WHJdvaFiK0Vg8UhzGJ1gZSPegnqahzm72s0qoIz-cKg6RmRRMGhwQUtKZw"  # ВСТАВЬТЕ ПУБЛИЧНУЮ ССЫЛКУ
+EDUCATIONAL_LINK = "https://disk.360.yandex.net/your-working-link"  # ЗАМЕНИТЕ!
 
 # Настройка логирования
 logging.basicConfig(
@@ -27,8 +25,8 @@ logger = logging.getLogger(__name__)
 # Создаем Flask приложение
 flask_app = Flask(__name__)
 
-# Создаем приложение бота (БЕЗ запуска polling!)
-application = Application.builder().token(BOT_TOKEN).updater(None).build()
+# Создаем и инициализируем приложение бота
+application = Application.builder().token(BOT_TOKEN).build()
 
 # ---------- ОБРАБОТЧИКИ КОМАНД ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -72,9 +70,11 @@ def webhook():
         
         update = Update.de_json(update_data, application.bot)
         
-        # Важно: запускаем асинхронную обработку
+        # Правильная обработка асинхронного вызова
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+        
+        # ВАЖНО: используем application, а не application.bot
         loop.run_until_complete(application.process_update(update))
         loop.close()
         
@@ -85,38 +85,34 @@ def webhook():
 
 @flask_app.route('/health')
 def health():
-    """Health check для Render (обязательно!)"""
     return 'OK', 200
 
 @flask_app.route('/')
 def index():
     return 'Бот для педагогических документов работает!'
-
-@flask_app.route('/setup-webhook')
-def setup_webhook():
-    """Автоматическая установка webhook при запуске"""
-    try:
-        webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
-        application.bot.delete_webhook()
-        application.bot.set_webhook(url=webhook_url)
-        logger.info(f"Webhook установлен на {webhook_url}")
-        return f"Webhook установлен на {webhook_url}", 200
-    except Exception as e:
-        logger.error(f"Ошибка установки webhook: {e}")
-        return f"Ошибка: {str(e)}", 500
 # ------------------------------
 
 # ---------- ТОЧКА ВХОДА ----------
+async def setup_and_run():
+    """Инициализация и запуск"""
+    # Инициализируем приложение
+    await application.initialize()
+    
+    # Устанавливаем webhook
+    webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
+    await application.bot.set_webhook(url=webhook_url)
+    logger.info(f"✅ Webhook установлен на {webhook_url}")
+    
+    # Запускаем приложение (но не polling!)
+    await application.start()
+    
+    return application
+
 if __name__ == '__main__':
-    # При запуске автоматически устанавливаем webhook
-    with flask_app.app_context():
-        try:
-            webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
-            application.bot.delete_webhook()
-            application.bot.set_webhook(url=webhook_url)
-            logger.info(f"✅ Webhook установлен на {webhook_url}")
-        except Exception as e:
-            logger.error(f"❌ Ошибка установки webhook: {e}")
+    # Настраиваем и запускаем бота
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(setup_and_run())
     
     # Запускаем Flask сервер
     flask_app.run(host='0.0.0.0', port=PORT)
