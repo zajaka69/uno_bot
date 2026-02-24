@@ -1,118 +1,94 @@
 import os
+import json
 import logging
-import asyncio
+import requests
 from flask import Flask, request
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# ---------- НАСТРОЙКИ ----------
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Конфигурация
 BOT_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL')
 PORT = int(os.environ.get('PORT', 10000))
 
-# Ваши ссылки на документы
+# Ссылки на документы
 PEDAGOGICAL_LINK = "https://docs.google.com/spreadsheets/d/1v4xlteVMrNZJ4vp2x3T_FxEFwC_4yUX2/edit?gid=1331177780#gid=1331177780"
 EDUCATIONAL_LINK = "https://disk.360.yandex.net/your-working-link"  # ЗАМЕНИТЕ!
 
-# Настройка логирования
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
-# --------------------------------
+# URL для отправки ответов
+TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# Создаем Flask приложение
+# Flask приложение
 flask_app = Flask(__name__)
 
-# Глобальная переменная для приложения бота
-bot_application = None
-
-# ---------- ОБРАБОТЧИКИ КОМАНД ----------
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton("📚 Педагогическая работа", url=PEDAGOGICAL_LINK)],
-        [InlineKeyboardButton("👥 Воспитательная работа", url=EDUCATIONAL_LINK)],
-        [InlineKeyboardButton("❓ Помощь", callback_data='help')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text(
-        "Здравствуйте! Я бот-помощник. Выберите нужный раздел:",
-        reply_markup=reply_markup
-    )
-
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    if query.data == 'help':
-        help_text = (
-            "📋 **Как пользоваться ботом:**\n\n"
-            "• Нажмите на кнопку с названием раздела\n"
-            "• Ссылка откроется в браузере автоматически\n\n"
-            "❓ По вопросам доступа обращайтесь к администратору"
-        )
-        await query.edit_message_text(text=help_text)
-# ------------------------------------------
-
-# ---------- ИНИЦИАЛИЗАЦИЯ БОТА ----------
-async def init_bot():
-    """Создание и инициализация приложения бота"""
-    global bot_application
-    
-    logger.info("🚀 Инициализация бота...")
-    
-    # Создаем приложение
-    bot_application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Добавляем обработчики
-    bot_application.add_handler(CommandHandler("start", start))
-    bot_application.add_handler(CallbackQueryHandler(button_handler))
-    
-    # Инициализируем
-    await bot_application.initialize()
-    await bot_application.start()
-    
-    # Устанавливаем webhook
-    if RENDER_EXTERNAL_URL:
-        webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
-        await bot_application.bot.set_webhook(url=webhook_url)
-        logger.info(f"✅ Webhook установлен на {webhook_url}")
-    
-    logger.info("✅ Бот инициализирован")
-    return bot_application
-# ------------------------------------------
-
-# ---------- WEBHOOK ----------
-@flask_app.route('/webhook', methods=['POST'])
-def webhook():
-    """Точка входа для сообщений от Telegram"""
-    global bot_application
-    
-    # Проверяем, что бот инициализирован
-    if bot_application is None:
-        logger.error("❌ Бот не инициализирован!")
-        return 'Bot not initialized', 503
+def send_message(chat_id, text, keyboard=None):
+    """Отправка сообщения через Telegram API"""
+    url = f"{TELEGRAM_API_URL}/sendMessage"
+    payload = {
+        'chat_id': chat_id,
+        'text': text,
+        'parse_mode': 'HTML'
+    }
+    if keyboard:
+        payload['reply_markup'] = json.dumps(keyboard)
     
     try:
-        update_data = request.get_json(force=True)
-        logger.info(f"📨 Получено обновление: {update_data.get('update_id')}")
+        response = requests.post(url, json=payload)
+        logger.info(f"Отправлено сообщение: {response.status_code}")
+    except Exception as e:
+        logger.error(f"Ошибка отправки: {e}")
+
+def create_keyboard():
+    """Создание клавиатуры с кнопками-ссылками"""
+    return {
+        'inline_keyboard': [
+            [{'text': '📚 Педагогическая работа', 'url': PEDAGOGICAL_LINK}],
+            [{'text': '👥 Воспитательная работа', 'url': EDUCATIONAL_LINK}],
+            [{'text': '❓ Помощь', 'callback_data': 'help'}]
+        ]
+    }
+
+@flask_app.route('/webhook', methods=['POST'])
+def webhook():
+    """Обработка сообщений от Telegram"""
+    try:
+        update = request.get_json()
+        logger.info(f"Получено обновление: {update.get('update_id')}")
         
-        update = Update.de_json(update_data, bot_application.bot)
+        # Обработка команды /start
+        if 'message' in update and 'text' in update['message']:
+            chat_id = update['message']['chat']['id']
+            text = update['message']['text']
+            
+            if text == '/start':
+                keyboard = create_keyboard()
+                send_message(
+                    chat_id, 
+                    "Здравствуйте! Я бот-помощник. Выберите нужный раздел:",
+                    keyboard
+                )
         
-        # Создаем новый event loop для каждого запроса
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(bot_application.process_update(update))
-        finally:
-            loop.close()
+        # Обработка callback-запросов (нажатия на кнопки)
+        elif 'callback_query' in update:
+            query = update['callback_query']
+            chat_id = query['message']['chat']['id']
+            callback_data = query['data']
+            
+            if callback_data == 'help':
+                help_text = (
+                    "📋 <b>Как пользоваться ботом:</b>\n\n"
+                    "• Нажмите на кнопку с названием раздела\n"
+                    "• Ссылка откроется в браузере автоматически\n\n"
+                    "❓ По вопросам доступа обращайтесь к администратору"
+                )
+                send_message(chat_id, help_text)
         
         return 'OK', 200
     except Exception as e:
-        logger.error(f"❌ Ошибка при обработке webhook: {e}")
-        return f'Error: {str(e)}', 500
+        logger.error(f"Ошибка: {e}")
+        return 'Error', 500
 
 @flask_app.route('/health')
 def health():
@@ -120,30 +96,15 @@ def health():
 
 @flask_app.route('/')
 def index():
-    status = "✅ Бот работает" if bot_application else "❌ Бот инициализируется"
-    return f'Бот для педагогических документов. Статус: {status}'
+    return 'Бот для педагогических документов работает!'
 
-@flask_app.route('/debug')
-def debug():
-    """Отладочная информация"""
-    return {
-        'bot_initialized': bot_application is not None,
-        'render_url': RENDER_EXTERNAL_URL,
-        'port': PORT
-    }
-# ------------------------------
+@flask_app.route('/setup-webhook')
+def setup_webhook():
+    """Установка webhook (вызвать один раз)"""
+    webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
+    url = f"{TELEGRAM_API_URL}/setWebhook"
+    response = requests.post(url, json={'url': webhook_url})
+    return response.json()
 
-# ---------- ТОЧКА ВХОДА ----------
 if __name__ == '__main__':
-    # Инициализируем бота синхронно
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(init_bot())
-    except Exception as e:
-        logger.error(f"❌ Ошибка при инициализации бота: {e}")
-    finally:
-        loop.close()
-    
-    # Запускаем Flask
     flask_app.run(host='0.0.0.0', port=PORT)
