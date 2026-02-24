@@ -5,6 +5,7 @@ from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
+
 # ---------- НАСТРОЙКИ ----------
 BOT_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 # Render сам подставит URL вашего сервиса
@@ -13,7 +14,7 @@ PORT = int(os.environ.get('PORT', 10000))
 
 # Ваши ссылки на документы (ЗАМЕНИТЕ НА СВОИ)
 PEDAGOGICAL_LINK = "https://docs.google.com/spreadsheets/d/1v4xlteVMrNZJ4vp2x3T_FxEFwC_4yUX2/edit?gid=1331177780#gid=1331177780"
-EDUCATIONAL_LINK = "https://disk.360.yandex.net/your-working-link"  # ВСТАВЬТЕ ПУБЛИЧНУЮ ССЫЛКУ
+EDUCATIONAL_LINK = "https://disk.360.yandex.ru/edit/d/WHJdvaFiK0Vg8UhzGJ1gZSPegnqahzm72s0qoIz-cKg6RmRRMGhwQUtKZw"  # ВСТАВЬТЕ ПУБЛИЧНУЮ ССЫЛКУ
 
 # Настройка логирования
 logging.basicConfig(
