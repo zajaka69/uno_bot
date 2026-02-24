@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: telegram-ped-bot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn bot_webhook:flask_app --bind 0.0.0.0:$PORT
+    healthCheckPath: /health
+    envVars:
+      - key: TELEGRAM_TOKEN
+        sync: false  # Будет запрошено при деплое
