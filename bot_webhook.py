@@ -10,9 +10,9 @@ BOT_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL')
 PORT = int(os.environ.get('PORT', 10000))
 
-# Ваши ссылки на документы
+# Ваши ссылки на документы (ЗАМЕНИТЕ НА РАБОЧИЕ!)
 PEDAGOGICAL_LINK = "https://docs.google.com/spreadsheets/d/1v4xlteVMrNZJ4vp2x3T_FxEFwC_4yUX2/edit?gid=1331177780#gid=1331177780"
-EDUCATIONAL_LINK = "https://disk.360.yandex.net/your-working-link"  # ЗАМЕНИТЕ!
+EDUCATIONAL_LINK = "https://disk.360.yandex.net/your-working-link"  # ВСТАВЬТЕ ПУБЛИЧНУЮ ССЫЛКУ
 
 # Настройка логирования
 logging.basicConfig(
@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 # Создаем Flask приложение
 flask_app = Flask(__name__)
 
-# Создаем и инициализируем приложение бота
-application = Application.builder().token(BOT_TOKEN).build()
+# Глобальная переменная для приложения бота
+bot_application = None
 
 # ---------- ОБРАБОТЧИКИ КОМАНД ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -54,10 +54,36 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "❓ По вопросам доступа обращайтесь к администратору"
         )
         await query.edit_message_text(text=help_text)
+# ------------------------------------------
 
-# Регистрируем обработчики
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CallbackQueryHandler(button_handler))
+# ---------- ИНИЦИАЛИЗАЦИЯ БОТА ----------
+async def init_bot():
+    """Создание и инициализация приложения бота"""
+    global bot_application
+    
+    # Создаем приложение без Updater (для webhook)
+    bot_application = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .updater(None)  # Явно отключаем Updater для webhook режима
+        .build()
+    )
+    
+    # Добавляем обработчики
+    bot_application.add_handler(CommandHandler("start", start))
+    bot_application.add_handler(CallbackQueryHandler(button_handler))
+    
+    # Инициализируем
+    await bot_application.initialize()
+    await bot_application.start()
+    
+    # Устанавливаем webhook
+    if RENDER_EXTERNAL_URL:
+        webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
+        await bot_application.bot.set_webhook(url=webhook_url)
+        logger.info(f"✅ Webhook установлен на {webhook_url}")
+    
+    return bot_application
 # ------------------------------------------
 
 # ---------- WEBHOOK ----------
@@ -68,14 +94,12 @@ def webhook():
         update_data = request.get_json(force=True)
         logger.info(f"Получено обновление: {update_data.get('update_id')}")
         
-        update = Update.de_json(update_data, application.bot)
+        update = Update.de_json(update_data, bot_application.bot)
         
-        # Правильная обработка асинхронного вызова
+        # Обрабатываем обновление
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
-        # ВАЖНО: используем application, а не application.bot
-        loop.run_until_complete(application.process_update(update))
+        loop.run_until_complete(bot_application.process_update(update))
         loop.close()
         
         return 'OK', 200
@@ -93,26 +117,11 @@ def index():
 # ------------------------------
 
 # ---------- ТОЧКА ВХОДА ----------
-async def setup_and_run():
-    """Инициализация и запуск"""
-    # Инициализируем приложение
-    await application.initialize()
-    
-    # Устанавливаем webhook
-    webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
-    await application.bot.set_webhook(url=webhook_url)
-    logger.info(f"✅ Webhook установлен на {webhook_url}")
-    
-    # Запускаем приложение (но не polling!)
-    await application.start()
-    
-    return application
-
 if __name__ == '__main__':
-    # Настраиваем и запускаем бота
+    # Инициализируем бота в отдельном цикле событий
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    loop.run_until_complete(setup_and_run())
+    loop.run_until_complete(init_bot())
     
-    # Запускаем Flask сервер
+    # Запускаем Flask
     flask_app.run(host='0.0.0.0', port=PORT)
