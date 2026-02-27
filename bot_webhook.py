@@ -14,8 +14,8 @@ RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL')
 PORT = int(os.environ.get('PORT', 10000))
 
 # Ссылки на документы
-PEDAGOGICAL_LINK = "https://docs.google.com/spreadsheets/d/1v4xlteVMrNZJ4vp2x3T_FxEFwC_4yUX2/edit?gid=1331177780#gid=1331177780"
-EDUCATIONAL_LINK = "https://disk.360.yandex.ru/edit/d/WHJdvaFiK0Vg8UhzGJ1gZSPegnqahzm72s0qoIz-cKg6RmRRMGhwQUtKZw"  # ЗАМЕНИТЕ!
+EDUCATIONAL_LINK = "https://docs.google.com/spreadsheets/d/1v4xlteVMrNZJ4vp2x3T_FxEFwC_4yUX2/edit?gid=1331177780#gid=1331177780"
+PEDAGOGICAL_LINK = "https://disk.360.yandex.ru/edit/d/WHJdvaFiK0Vg8UhzGJ1gZSPegnqahzm72s0qoIz-cKg6RmRRMGhwQUtKZw"  # ЗАМЕНИТЕ!
 
 # URL для отправки ответов
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
